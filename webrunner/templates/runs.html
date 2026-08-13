@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}History · WebRunner{% endblock %}
+{% block heading %}Run history{% endblock %}
+
+{% block actions %}
+<div class="row">
+  <select id="filter-job" style="width:190px"><option value="">All jobs</option></select>
+  <select id="filter-status" style="width:150px">
+    <option value="">Any status</option>
+    <option value="success">Success</option>
+    <option value="failed">Failed</option>
+    <option value="running">Running</option>
+    <option value="timeout">Timed out</option>
+    <option value="cancelled">Cancelled</option>
+    <option value="skipped">Skipped</option>
+    <option value="error">Error</option>
+  </select>
+  <button class="btn-danger btn-sm" id="clear">Clear history</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-body tight"><div id="runs"></div></div>
+</div>
+<div class="row mt" style="justify-content:center;gap:12px">
+  <button id="prev" class="btn-sm">← Newer</button>
+  <span class="small muted" id="page-info"></span>
+  <button id="next" class="btn-sm">Older →</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PAGE = 50;
+let offset = 0;
+let total = 0;
+
+async function loadJobs() {
+  try {
+    const jobs = await WR.get('/api/jobs');
+    document.getElementById('filter-job').innerHTML =
+      '<option value="">All jobs</option>' +
+      jobs.map((j) => `<option value="${j.id}">${WR.escape(j.name)}</option>`).join('');
+  } catch (err) { WR.error(err); }
+}
+
+async function load() {
+  const jobId = document.getElementById('filter-job').value;
+  const status = document.getElementById('filter-status').value;
+  const params = new URLSearchParams({ limit: PAGE, offset });
+  if (jobId) params.set('job_id', jobId);
+  if (status) params.set('status', status);
+
+  let data;
+  try { data = await WR.get('/api/runs?' + params); } catch (err) { return WR.error(err); }
+  total = data.total;
+
+  const host = document.getElementById('runs');
+  if (!data.runs.length) {
+    host.innerHTML = `<div class="empty"><svg width="38" height="38"><use href="#i-runs"/></svg>
+      <h3>Nothing here yet</h3><div class="small">Runs appear as soon as a job fires.</div></div>`;
+  } else {
+    host.innerHTML = `<table>
+      <thead><tr><th style="width:96px">Status</th><th>Job</th><th>Trigger</th>
+        <th>Started</th><th>Duration</th><th>Exit</th><th></th></tr></thead>
+      <tbody>${data.runs.map((run) => `
+        <tr style="cursor:pointer" onclick="WR.showRun(${run.id})">
+          <td>${WR.pill(run.status)}</td>
+          <td><b>${WR.escape(run.job_name || '(deleted)')}</b>
+              ${run.attempt > 1 ? `<span class="tag">retry ${run.attempt}</span>` : ''}</td>
+          <td class="small muted">${WR.escape(run.trigger)}</td>
+          <td class="small nowrap">${WR.when(run.started_at)}
+              <span class="tiny faint">${WR.relative(run.started_at)}</span></td>
+          <td class="small nowrap">${WR.duration(run.duration)}</td>
+          <td class="small mono">${run.exit_code === null || run.exit_code === undefined ? '—' : run.exit_code}</td>
+          <td class="actions">
+            ${run.status === 'running'
+              ? `<button class="btn-danger btn-sm always" onclick="event.stopPropagation();cancel(${run.id})">Cancel</button>`
+              : ''}
+          </td>
+        </tr>`).join('')}</tbody></table>`;
+  }
+
+  const from = total ? offset + 1 : 0;
+  document.getElementById('page-info').textContent =
+    `${from}–${Math.min(offset + PAGE, total)} of ${total}`;
+  document.getElementById('prev').disabled = offset === 0;
+  document.getElementById('next').disabled = offset + PAGE >= total;
+}
+
+async function cancel(runId) {
+  try { await WR.post(`/api/runs/${runId}/cancel`); WR.toast('Cancellation requested', 'warn'); }
+  catch (err) { WR.error(err); }
+}
+
+document.getElementById('prev').onclick = () => { offset = Math.max(0, offset - PAGE); load(); };
+document.getElementById('next').onclick = () => { offset += PAGE; load(); };
+document.getElementById('filter-job').onchange = () => { offset = 0; load(); };
+document.getElementById('filter-status').onchange = () => { offset = 0; load(); };
+document.getElementById('clear').onclick = async () => {
+  const jobId = document.getElementById('filter-job').value;
+  const label = jobId ? 'this job’s finished runs' : 'ALL finished runs';
+  if (!await WR.confirm(`Delete ${label}? Running jobs are not affected.`,
+                        { confirmLabel: 'Delete history' })) return;
+  try {
+    const result = await WR.del('/api/runs' + (jobId ? `?job_id=${jobId}` : ''));
+    WR.toast(`Removed ${result.removed} run(s)`, 'success');
+    offset = 0;
+    load();
+  } catch (err) { WR.error(err); }
+};
+
+loadJobs();
+load();
+WR.events.on((msg) => { if (msg.event?.startsWith('run.') && offset === 0) load(); });
+setInterval(() => { if (offset === 0) load(); }, 20000);
+</script>
+{% endblock %}

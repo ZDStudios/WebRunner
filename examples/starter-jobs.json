@@ -1,0 +1,343 @@
+{
+  "version": "1.0.0",
+  "_comment": "Import from Settings -> Import jobs, or: webrunner import examples/starter-jobs.json. Every job arrives DISABLED except where noted - edit the commands for your machine, then switch them on.",
+  "jobs": [
+    {
+      "name": "Example - nightly backup",
+      "description": "Runs a backup at 03:00, prunes old snapshots, and reports failures.",
+      "enabled": false,
+      "tags": "example, backup",
+      "trigger_type": "cron",
+      "cron": "0 3 * * *",
+      "timeout_seconds": 7200,
+      "max_retries": 2,
+      "retry_delay_seconds": 300,
+      "concurrency": "skip",
+      "catch_up": true,
+      "notify_on": "failure",
+      "steps": {
+        "start": "backup",
+        "nodes": [
+          {
+            "id": "backup",
+            "type": "shell",
+            "name": "Back up /srv",
+            "position": { "x": 140, "y": 60 },
+            "config": {
+              "command": "restic backup /srv --tag {{ now.date }}",
+              "expect_exit": "0"
+            },
+            "edges": { "success": "prune", "failure": "alert" }
+          },
+          {
+            "id": "prune",
+            "type": "shell",
+            "name": "Prune old snapshots",
+            "position": { "x": 140, "y": 220 },
+            "config": {
+              "command": "restic forget --keep-daily 7 --keep-weekly 4 --prune",
+              "expect_exit": "0"
+            },
+            "edges": {}
+          },
+          {
+            "id": "alert",
+            "type": "notify",
+            "name": "Tell me it broke",
+            "position": { "x": 420, "y": 220 },
+            "config": {
+              "channel": "webhook",
+              "message": "Backup FAILED on {{ now.iso }}\nexit={{ steps.backup.exit_code }}\n{{ steps.backup.stdout | last }}"
+            },
+            "edges": { "next": "fail" }
+          },
+          {
+            "id": "fail",
+            "type": "stop",
+            "name": "Mark the run failed",
+            "position": { "x": 420, "y": 380 },
+            "config": { "result": "failed", "message": "backup did not complete" },
+            "edges": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "Example - API health check",
+      "description": "Polls an endpoint every 5 minutes and restarts the service if it stops answering.",
+      "enabled": false,
+      "tags": "example, monitoring",
+      "trigger_type": "cron",
+      "cron": "*/5 * * * *",
+      "timeout_seconds": 120,
+      "concurrency": "skip",
+      "notify_on": "never",
+      "steps": {
+        "start": "probe",
+        "nodes": [
+          {
+            "id": "probe",
+            "type": "http",
+            "name": "GET /health",
+            "position": { "x": 140, "y": 60 },
+            "ignore_failure": true,
+            "config": {
+              "method": "GET",
+              "url": "https://example.com/health",
+              "auth_type": "none",
+              "expect_status": "2xx",
+              "timeout_seconds": 15,
+              "follow_redirects": true,
+              "verify_tls": true,
+              "extract": { "state": "status" }
+            },
+            "edges": { "success": "ok", "failure": "restart" }
+          },
+          {
+            "id": "ok",
+            "type": "stop",
+            "name": "Healthy",
+            "position": { "x": 140, "y": 240 },
+            "config": { "result": "success", "message": "service is up ({{ vars.state }})" },
+            "edges": {}
+          },
+          {
+            "id": "restart",
+            "type": "service",
+            "name": "Restart the service",
+            "position": { "x": 420, "y": 240 },
+            "config": {
+              "backend": "auto",
+              "name": "nginx",
+              "action": "restart",
+              "timeout_seconds": 60
+            },
+            "edges": { "success": "settle", "failure": "shout" }
+          },
+          {
+            "id": "settle",
+            "type": "sleep",
+            "name": "Give it 15s",
+            "position": { "x": 420, "y": 400 },
+            "config": { "seconds": 15 },
+            "edges": { "next": "recheck" }
+          },
+          {
+            "id": "recheck",
+            "type": "http",
+            "name": "Probe again",
+            "position": { "x": 420, "y": 540 },
+            "config": {
+              "method": "GET",
+              "url": "https://example.com/health",
+              "auth_type": "none",
+              "expect_status": "2xx",
+              "timeout_seconds": 15,
+              "follow_redirects": true,
+              "verify_tls": true
+            },
+            "edges": { "failure": "shout" }
+          },
+          {
+            "id": "shout",
+            "type": "notify",
+            "name": "Escalate",
+            "position": { "x": 720, "y": 700 },
+            "config": {
+              "channel": "webhook",
+              "message": "{{ job.name }}: still unhealthy after a restart at {{ now.iso }}"
+            },
+            "edges": { "next": "give-up" }
+          },
+          {
+            "id": "give-up",
+            "type": "stop",
+            "name": "Fail the run",
+            "position": { "x": 720, "y": 860 },
+            "config": { "result": "failed", "message": "service did not recover" },
+            "edges": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "Example - disk space warning",
+      "description": "Warns when the root filesystem passes 85% used.",
+      "enabled": false,
+      "tags": "example, monitoring",
+      "trigger_type": "cron",
+      "cron": "0 * * * *",
+      "timeout_seconds": 60,
+      "notify_on": "never",
+      "steps": {
+        "start": "measure",
+        "nodes": [
+          {
+            "id": "measure",
+            "type": "shell",
+            "name": "Read disk usage",
+            "position": { "x": 140, "y": 60 },
+            "config": {
+              "command": "df -P / | awk 'NR==2 {gsub(/%/,\"\",$5); print $5}'",
+              "expect_exit": "0"
+            },
+            "edges": { "success": "check" }
+          },
+          {
+            "id": "check",
+            "type": "condition",
+            "name": "Over 85%?",
+            "position": { "x": 140, "y": 220 },
+            "config": {
+              "left": "{{ steps.measure.stdout | trim }}",
+              "operator": ">",
+              "right": "85"
+            },
+            "edges": { "true": "warn" }
+          },
+          {
+            "id": "warn",
+            "type": "notify",
+            "name": "Send a warning",
+            "position": { "x": 140, "y": 380 },
+            "config": {
+              "channel": "webhook",
+              "message": "Disk on {{ job.name }} is {{ steps.measure.stdout | trim }}% full at {{ now.iso }}"
+            },
+            "edges": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "Example - fetch an API and process it in Python",
+      "description": "Calls an authenticated endpoint, pulls a value out of the JSON, and hands it to a Python step.",
+      "enabled": false,
+      "tags": "example, api",
+      "trigger_type": "cron",
+      "cron": "0 6 * * *",
+      "timeout_seconds": 600,
+      "notify_on": "failure",
+      "steps": {
+        "start": "fetch",
+        "nodes": [
+          {
+            "id": "fetch",
+            "type": "http",
+            "name": "Fetch the report",
+            "position": { "x": 140, "y": 60 },
+            "config": {
+              "method": "POST",
+              "url": "https://api.example.com/v1/reports",
+              "auth_type": "bearer",
+              "auth_token": "{{ secrets.API_KEY }}",
+              "headers": { "Accept": "application/json" },
+              "body_type": "json",
+              "body": "{\n  \"date\": \"{{ now.date }}\",\n  \"source\": \"{{ job.name }}\"\n}",
+              "expect_status": "2xx",
+              "timeout_seconds": 60,
+              "follow_redirects": true,
+              "verify_tls": true,
+              "extract": { "report_id": "data.id", "row_count": "data.rows" }
+            },
+            "edges": { "success": "process" }
+          },
+          {
+            "id": "process",
+            "type": "python",
+            "name": "Do something with it",
+            "position": { "x": 140, "y": 240 },
+            "config": {
+              "code": "import os\n\nreport_id = os.environ.get('WR_REPORT_ID', '')\nrows = os.environ.get('WR_ROW_COUNT', '0')\n\nprint(f'processing report {report_id} with {rows} rows')\n# ... your work here ...\nprint('done')\n",
+              "expect_exit": "0"
+            },
+            "edges": { "success": "handoff" }
+          },
+          {
+            "id": "handoff",
+            "type": "script",
+            "name": "Run an existing script",
+            "position": { "x": 140, "y": 420 },
+            "config": {
+              "path": "/opt/scripts/publish_report.py",
+              "interpreter": "auto",
+              "args": "--id {{ vars.report_id }} --date {{ now.date }}",
+              "expect_exit": "0"
+            },
+            "edges": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "Example - weekly Docker stack refresh",
+      "description": "Pulls new images and recreates a compose stack on Sunday nights.",
+      "enabled": false,
+      "tags": "example, docker",
+      "trigger_type": "cron",
+      "cron": "0 4 * * 0",
+      "timeout_seconds": 1800,
+      "notify_on": "failure",
+      "steps": {
+        "start": "pull",
+        "nodes": [
+          {
+            "id": "pull",
+            "type": "shell",
+            "name": "Pull new images",
+            "position": { "x": 140, "y": 60 },
+            "config": {
+              "command": "docker compose -f /srv/stack/docker-compose.yml pull",
+              "expect_exit": "0"
+            },
+            "edges": { "success": "up" }
+          },
+          {
+            "id": "up",
+            "type": "docker",
+            "name": "Recreate the stack",
+            "position": { "x": 140, "y": 220 },
+            "config": {
+              "action": "compose-up",
+              "compose_file": "/srv/stack/docker-compose.yml",
+              "timeout_seconds": 900
+            },
+            "edges": { "success": "tidy" }
+          },
+          {
+            "id": "tidy",
+            "type": "docker",
+            "name": "Prune leftovers",
+            "position": { "x": 140, "y": 380 },
+            "config": { "action": "prune", "timeout_seconds": 300 },
+            "edges": {}
+          }
+        ]
+      }
+    },
+    {
+      "name": "Example - hello world",
+      "description": "The simplest possible job. Safe to run right now.",
+      "enabled": false,
+      "tags": "example",
+      "trigger_type": "manual",
+      "notify_on": "never",
+      "steps": {
+        "start": "hello",
+        "nodes": [
+          {
+            "id": "hello",
+            "type": "shell",
+            "name": "Say hello",
+            "position": { "x": 140, "y": 90 },
+            "config": {
+              "command": "echo \"Hello from {{ job.name }} at {{ now.time }} on {{ now.weekday }}\"",
+              "expect_exit": "0"
+            },
+            "edges": {}
+          }
+        ]
+      }
+    }
+  ]
+}

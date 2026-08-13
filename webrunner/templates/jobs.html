@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Jobs · WebRunner{% endblock %}
+{% block heading %}Jobs{% endblock %}
+
+{% block actions %}
+  <div class="row">
+    <input id="search" placeholder="Filter jobs…" style="width:200px" autocomplete="off">
+    <button class="btn-ghost btn-icon" id="export" title="Export all jobs as JSON">{{ ic.icon('copy', 15) }}</button>
+    <a class="btn btn-primary" href="/jobs/new">{{ ic.icon('plus', 15) }} New job</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-body tight"><div id="jobs"></div></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let jobs = [];
+
+async function load() {
+  try { jobs = await WR.get('/api/jobs'); } catch (err) { return WR.error(err); }
+  render();
+}
+
+function render() {
+  const filter = document.getElementById('search').value.trim().toLowerCase();
+  const visible = jobs.filter((job) =>
+    !filter ||
+    job.name.toLowerCase().includes(filter) ||
+    (job.tags || '').toLowerCase().includes(filter) ||
+    (job.description || '').toLowerCase().includes(filter));
+
+  const host = document.getElementById('jobs');
+  if (!visible.length) {
+    host.innerHTML = jobs.length
+      ? `<div class="empty"><h3>No jobs match “${WR.escape(filter)}”</h3></div>`
+      : `<div class="empty"><svg width="38" height="38"><use href="#i-jobs"/></svg>
+           <h3>No jobs yet</h3>
+           <div class="small">Build one from blocks — run a command, call an API, restart a service.</div>
+           <a class="btn btn-primary" href="/jobs/new" style="margin-top:14px">Create your first job</a>
+         </div>`;
+    return;
+  }
+
+  host.innerHTML = `<table>
+    <thead><tr>
+      <th style="width:34px"></th><th>Name</th><th>Schedule</th><th>Blocks</th>
+      <th>Last run</th><th>Next run</th><th></th>
+    </tr></thead>
+    <tbody>${visible.map(row).join('')}</tbody>
+  </table>`;
+}
+
+function row(job) {
+  const count = (job.steps?.nodes || []).length;
+  const types = [...new Set((job.steps?.nodes || []).map((n) => n.type))].slice(0, 3);
+  return `<tr data-id="${job.id}">
+    <td>
+      <button class="btn-ghost btn-icon always" title="${job.enabled ? 'Disable' : 'Enable'}"
+              onclick="toggle(${job.id})"
+              style="color:var(--${job.enabled ? 'green' : 'text-faint'})">
+        <svg width="15" height="15"><use href="#i-power"/></svg>
+      </button>
+    </td>
+    <td>
+      <div class="row">
+        <a href="/jobs/${job.id}/edit"><b>${WR.escape(job.name)}</b></a>
+        ${job.running ? '<span class="pill running"><span class="dot pulse"></span>running</span>' : ''}
+      </div>
+      ${job.description ? `<div class="tiny faint truncate">${WR.escape(job.description)}</div>` : ''}
+      ${(job.tags || '').split(',').filter(Boolean)
+          .map((t) => `<span class="tag">${WR.escape(t.trim())}</span>`).join('')}
+    </td>
+    <td class="small">
+      <div class="mono tiny">${WR.escape(job.schedule_text)}</div>
+      ${job.schedule_human ? `<div class="tiny faint">${WR.escape(job.schedule_human)}</div>` : ''}
+    </td>
+    <td class="small muted nowrap">${count} · <span class="tiny faint">${types.join(', ')}</span></td>
+    <td class="small nowrap">
+      ${job.last_status ? WR.pill(job.last_status) : '<span class="faint">—</span>'}
+      <div class="tiny faint">${WR.relative(job.last_run)}</div>
+    </td>
+    <td class="small nowrap">
+      ${job.enabled && job.next_run
+        ? `${WR.when(job.next_run)}<div class="tiny faint">${WR.relative(job.next_run)}</div>`
+        : '<span class="faint">—</span>'}
+    </td>
+    <td class="actions">
+      <button class="btn-ghost btn-icon" title="Run now" onclick="runNow(${job.id})">
+        <svg width="13" height="13"><use href="#i-play"/></svg></button>
+      <a class="btn-ghost btn-icon btn" title="Edit" href="/jobs/${job.id}/edit">
+        <svg width="14" height="14"><use href="#i-edit"/></svg></a>
+      <button class="btn-ghost btn-icon" title="Duplicate" onclick="duplicate(${job.id})">
+        <svg width="14" height="14"><use href="#i-copy"/></svg></button>
+      <button class="btn-ghost btn-icon" title="Delete" style="color:var(--red)"
+              onclick="remove(${job.id}, '${WR.escape(job.name).replace(/'/g, "\\'")}')">
+        <svg width="14" height="14"><use href="#i-trash"/></svg></button>
+    </td>
+  </tr>`;
+}
+
+async function runNow(id) {
+  try {
+    const { run_id } = await WR.post(`/api/jobs/${id}/run`);
+    WR.toast('Run started', 'success');
+    WR.showRun(run_id);
+  } catch (err) { WR.error(err); }
+}
+
+async function toggle(id) {
+  try { await WR.post(`/api/jobs/${id}/toggle`); load(); } catch (err) { WR.error(err); }
+}
+
+async function duplicate(id) {
+  try {
+    const copy = await WR.post(`/api/jobs/${id}/duplicate`);
+    WR.toast(`Created “${copy.name}” (disabled)`, 'success');
+    load();
+  } catch (err) { WR.error(err); }
+}
+
+async function remove(id, name) {
+  if (!await WR.confirm(`Delete “${name}”? Its run history is kept but the schedule is removed.`,
+                        { confirmLabel: 'Delete job' })) return;
+  try { await WR.del(`/api/jobs/${id}`); WR.toast('Job deleted'); load(); }
+  catch (err) { WR.error(err); }
+}
+
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('export').addEventListener('click', async () => {
+  try {
+    const data = await WR.get('/api/export');
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const link = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob),
+      download: `webrunner-jobs-${new Date().toISOString().slice(0, 10)}.json`,
+    });
+    link.click();
+    URL.revokeObjectURL(link.href);
+    WR.toast(`Exported ${data.jobs.length} job(s)`, 'success');
+  } catch (err) { WR.error(err); }
+});
+
+load();
+WR.events.on(() => load());
+setInterval(load, 20000);
+</script>
+{% endblock %}

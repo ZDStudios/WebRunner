@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · WebRunner</title>
+  <link rel="stylesheet" href="/static/style.css?v=1.0.0">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%235b8def'/><path d='M11 9l7 7-7 7' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+</head>
+<body>
+<div class="login-page">
+  <form class="login-card" id="login-form">
+    <div class="login-brand">
+      <div class="brand-mark">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6l7 6-7 6"/></svg>
+      </div>
+      <div>
+        <div class="brand-name" style="font-size:17px">WebRunner</div>
+        <div class="brand-version">Sign in to continue</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" autofocus required>
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+    </div>
+
+    <div id="login-error" class="banner error" style="display:none;margin-bottom:13px"></div>
+
+    <button class="btn-primary" type="submit" style="width:100%;justify-content:center" id="login-button">
+      Sign in
+    </button>
+
+    <p class="tiny faint" style="margin:16px 0 0;text-align:center">
+      First run? The password was printed to the server log
+      and saved to <code>initial-password.txt</code> in the data directory.
+    </p>
+  </form>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+  const form = document.getElementById('login-form');
+  const errorBox = document.getElementById('login-error');
+  const button = document.getElementById('login-button');
+  const next = new URLSearchParams(location.search).get('next') || '/';
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    errorBox.style.display = 'none';
+    button.disabled = true;
+    button.textContent = 'Signing in…';
+    try {
+      await WR.post('/api/login', {
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+      });
+      location.href = next.startsWith('/') ? next : '/';
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.style.display = '';
+      button.disabled = false;
+      button.textContent = 'Sign in';
+      document.getElementById('password').select();
+    }
+  });
+</script>
+</body>
+</html>

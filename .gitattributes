@@ -1,0 +1,22 @@
+# Normalise line endings so a clone on Linux gets working shell scripts.
+# A CRLF in install.sh makes bash fail with "\r: command not found".
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.py    text eol=lf
+*.js    text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.toml  text eol=lf
+*.md    text eol=lf
+Dockerfile text eol=lf
+
+# PowerShell is happiest with CRLF on Windows.
+*.ps1   text eol=crlf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary

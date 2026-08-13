@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Services · WebRunner{% endblock %}
+{% block heading %}Services{% endblock %}
+
+{% block actions %}
+<div class="row">
+  <div class="segmented" id="backends"></div>
+  <input id="search" placeholder="Filter…" style="width:180px" autocomplete="off">
+  <button class="btn-ghost btn-icon" id="refresh" title="Refresh">{{ ic.icon('refresh', 15) }}</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-body tight"><div id="services"><div class="empty"><span class="spinner"></span></div></div></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let current = '';
+let items = [];
+
+async function load(backend) {
+  document.getElementById('services').innerHTML =
+    '<div class="empty"><span class="spinner"></span></div>';
+  let data;
+  try { data = await WR.get('/api/services' + (backend ? `?backend=${backend}` : '')); }
+  catch (err) { return WR.error(err); }
+
+  current = data.backend;
+  document.getElementById('backends').innerHTML = data.backends.map((name) =>
+    `<button data-backend="${name}" class="${name === current ? 'active' : ''}">${name}</button>`).join('');
+  for (const button of document.querySelectorAll('#backends button')) {
+    button.onclick = () => load(button.dataset.backend);
+  }
+
+  if (data.error) {
+    document.getElementById('services').innerHTML =
+      `<div class="empty"><h3>Could not list services</h3>
+        <div class="small mono">${WR.escape(data.error)}</div></div>`;
+    return;
+  }
+  items = data.services;
+  render();
+}
+
+function render() {
+  const filter = document.getElementById('search').value.trim().toLowerCase();
+  const visible = items.filter((s) =>
+    !filter || s.name.toLowerCase().includes(filter) ||
+    (s.description || '').toLowerCase().includes(filter));
+
+  const host = document.getElementById('services');
+  if (!visible.length) {
+    host.innerHTML = `<div class="empty"><h3>Nothing to show</h3></div>`;
+    return;
+  }
+
+  const isDocker = current === 'docker';
+  host.innerHTML = `<table>
+    <thead><tr><th style="width:90px">State</th><th>${isDocker ? 'Container' : 'Service'}</th>
+      <th>${isDocker ? 'Image / status' : 'Description'}</th>
+      <th style="width:100px">Startup</th><th style="width:230px"></th></tr></thead>
+    <tbody>${visible.map((service) => `
+      <tr>
+        <td><span class="pill ${service.active ? 'success' : ''}">
+          ${service.active ? '<span class="dot"></span>' : ''}${WR.escape(service.state || '—')}</span></td>
+        <td><b class="mono small">${WR.escape(service.name)}</b></td>
+        <td class="small muted truncate" style="max-width:340px">${WR.escape(service.description || '')}</td>
+        <td class="small muted">${service.enabled === null ? '—' :
+          service.enabled ? 'enabled' : (service.startup || 'disabled')}</td>
+        <td class="actions">
+          <button class="btn-sm always" onclick="act('${service.name}','start')">Start</button>
+          <button class="btn-sm always" onclick="act('${service.name}','stop')">Stop</button>
+          <button class="btn-sm always" onclick="act('${service.name}','restart')">Restart</button>
+          <button class="btn-sm always" onclick="act('${service.name}','${current === 'docker' ? 'logs' : 'status'}')">
+            ${current === 'docker' ? 'Logs' : 'Status'}</button>
+        </td>
+      </tr>`).join('')}</tbody></table>`;
+}
+
+async function act(name, action) {
+  if (['stop', 'restart'].includes(action)) {
+    if (!await WR.confirm(`Run “${action}” on ${name}?`,
+                          { title: 'Confirm', confirmLabel: action, danger: action === 'stop' })) return;
+  }
+  try {
+    const result = await WR.post(
+      `/api/services/${current}/${action}?name=${encodeURIComponent(name)}`);
+    if (action === 'status' || action === 'logs' || !result.ok) {
+      WR.modal({
+        title: `${name} — ${action}`,
+        size: 'wide',
+        body: WR.el('pre', { class: 'terminal' }, result.output || '(no output)'),
+        actions: [{ label: 'Close', onClick: (c) => c() }],
+      });
+    } else {
+      WR.toast(`${action} succeeded on ${name}`, 'success');
+    }
+    if (action !== 'status' && action !== 'logs') setTimeout(() => load(current), 700);
+  } catch (err) { WR.error(err); }
+}
+
+document.getElementById('search').oninput = render;
+document.getElementById('refresh').onclick = () => load(current);
+load('');
+</script>
+{% endblock %}

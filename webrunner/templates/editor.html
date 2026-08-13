@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}Job editor · WebRunner{% endblock %}
+{% block page_class %}wide{% endblock %}
+
+{% block topbar %}
+<header class="topbar">
+  <a class="btn btn-ghost btn-icon" href="/jobs" title="Back to jobs">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+  </a>
+  <input id="job-name" placeholder="Job name" autocomplete="off"
+         style="width:260px;font-weight:600;font-size:15px">
+  <label class="checkbox-row" style="margin-left:4px">
+    <input type="checkbox" id="job-enabled" checked> Enabled
+  </label>
+
+  <div class="tabs" style="border:none;margin-left:10px">
+    <button data-tab="workflow" class="active">Workflow</button>
+    <button data-tab="schedule">Schedule</button>
+    <button data-tab="options">Options</button>
+  </div>
+
+  <div class="spacer"></div>
+  <span id="dirty-flag" class="tiny faint"></span>
+  <button id="run-btn" class="btn" title="Save and run once">{{ ic.icon('play', 13) }} Run now</button>
+  <button id="save-btn" class="btn-primary">Save job</button>
+</header>
+{% endblock %}
+
+{% block content %}
+<div id="tab-workflow" class="tab-panel" style="display:flex;flex:1;min-height:0">
+
+  <aside id="palette" style="width:190px;flex:none;border-right:1px solid var(--border);
+                             background:var(--bg-raised);overflow-y:auto;padding:12px 10px">
+  </aside>
+
+  <div id="canvas" style="flex:1;position:relative;overflow:hidden;background:var(--bg);
+                          background-image:radial-gradient(circle,var(--border) 1px,transparent 1px);
+                          background-size:22px 22px;cursor:grab">
+    <div id="world" style="position:absolute;inset:0;transform-origin:0 0">
+      <svg id="edges" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none"
+           width="1" height="1"></svg>
+      <div id="nodes"></div>
+    </div>
+
+    <div id="canvas-empty" class="empty" style="position:absolute;inset:0;display:grid;
+         place-content:center;pointer-events:none">
+      <svg width="40" height="40" style="margin:0 auto"><use href="#i-branch"/></svg>
+      <h3>Build your workflow</h3>
+      <div class="small">Click a block on the left to add it, then drag between the dots to connect.</div>
+    </div>
+
+    <div style="position:absolute;left:12px;bottom:12px;display:flex;gap:6px">
+      <button class="btn btn-sm" id="zoom-out" title="Zoom out">−</button>
+      <button class="btn btn-sm" id="zoom-reset" title="Fit to view">Fit</button>
+      <button class="btn btn-sm" id="zoom-in" title="Zoom in">+</button>
+      <span class="tiny faint" style="align-self:center;margin-left:6px" id="zoom-label">100%</span>
+    </div>
+    <div class="tiny faint" style="position:absolute;right:12px;bottom:12px;text-align:right">
+      drag canvas to pan · ctrl+scroll to zoom · Del removes the selection
+    </div>
+  </div>
+
+  <aside id="inspector" style="width:340px;flex:none;border-left:1px solid var(--border);
+                               background:var(--bg-raised);overflow-y:auto"></aside>
+</div>
+
+<div id="tab-schedule" class="tab-panel" style="display:none;padding:22px 26px;overflow:auto">
+  <div class="grid two" style="align-items:start;max-width:1000px">
+    <div class="card">
+      <div class="card-head"><h2>When should this run?</h2></div>
+      <div class="card-body">
+        <div class="field">
+          <label>Trigger</label>
+          <select id="trigger-type">
+            <option value="cron">On a schedule (cron)</option>
+            <option value="interval">Every N seconds</option>
+            <option value="date">Once, at a specific date and time</option>
+            <option value="manual">Manually only</option>
+          </select>
+        </div>
+
+        <div id="cron-fields">
+          <div class="field">
+            <label>Cron expression</label>
+            <input id="cron" class="code-input" placeholder="0 3 * * *" autocomplete="off">
+            <div class="field-help">
+              minute hour day-of-month month day-of-week — or a nickname like <code>@daily</code>.
+              A leading 6th field adds seconds.
+            </div>
+          </div>
+          <div class="row" style="flex-wrap:wrap;gap:6px" id="cron-presets"></div>
+        </div>
+
+        <div id="interval-fields" style="display:none">
+          <div class="field">
+            <label>Run every</label>
+            <div class="field-row">
+              <input id="interval-value" type="number" min="1" value="5">
+              <select id="interval-unit">
+                <option value="1">seconds</option>
+                <option value="60" selected>minutes</option>
+                <option value="3600">hours</option>
+                <option value="86400">days</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div id="date-fields" style="display:none">
+          <div class="field">
+            <label>Run at</label>
+            <input id="run-at" type="datetime-local">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Timezone</label>
+          <input id="timezone" placeholder="Server default" list="tz-list" autocomplete="off">
+          <datalist id="tz-list"></datalist>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label>Not before <span class="faint">(optional)</span></label>
+            <input id="start-at" type="datetime-local">
+          </div>
+          <div class="field">
+            <label>Not after <span class="faint">(optional)</span></label>
+            <input id="end-at" type="datetime-local">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Preview</h2></div>
+      <div class="card-body"><div id="schedule-preview" class="small muted">—</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="tab-options" class="tab-panel" style="display:none;padding:22px 26px;overflow:auto">
+  <div class="grid two" style="align-items:start;max-width:1000px">
+
+    <div class="card">
+      <div class="card-head"><h2>Execution</h2></div>
+      <div class="card-body">
+        <div class="field">
+          <label>Description</label>
+          <textarea id="job-description" rows="2" placeholder="What does this job do?"></textarea>
+        </div>
+        <div class="field">
+          <label>Tags</label>
+          <input id="job-tags" placeholder="backup, nightly" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Working directory</label>
+          <input id="job-cwd" placeholder="Defaults to the WebRunner data directory" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Environment variables</label>
+          <div id="job-env"></div>
+        </div>
+        <div class="field">
+          <label>Run as user <span class="faint">(Linux only, needs root)</span></label>
+          <input id="job-run-as" placeholder="e.g. www-data" autocomplete="off">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Reliability</h2></div>
+      <div class="card-body">
+        <div class="field-row">
+          <div class="field">
+            <label>Timeout (seconds)</label>
+            <input id="job-timeout" type="number" min="0" value="0">
+            <div class="field-help">0 means no limit.</div>
+          </div>
+          <div class="field">
+            <label>Retries on failure</label>
+            <input id="job-retries" type="number" min="0" value="0">
+          </div>
+        </div>
+        <div class="field">
+          <label>Wait between retries (seconds)</label>
+          <input id="job-retry-delay" type="number" min="0" value="30">
+        </div>
+        <div class="field">
+          <label>If it is already running</label>
+          <select id="job-concurrency">
+            <option value="skip">Skip this run</option>
+            <option value="queue">Queue it and run after</option>
+            <option value="allow">Run both at once</option>
+            <option value="replace">Cancel the old run and restart</option>
+          </select>
+        </div>
+        <label class="checkbox-row mb">
+          <input type="checkbox" id="job-catchup">
+          Run missed schedules after downtime
+        </label>
+
+        <div class="field">
+          <label>Notify</label>
+          <select id="job-notify-on">
+            <option value="failure">Only when it fails</option>
+            <option value="always">Every run</option>
+            <option value="never">Never</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Webhook URL <span class="faint">(optional override)</span></label>
+          <input id="job-notify-url" placeholder="Uses the global webhook when blank" autocomplete="off">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>window.WR_JOB_ID = {{ job_id }};</script>
+<script src="/static/builder.js?v={{ version }}"></script>
+{% endblock %}

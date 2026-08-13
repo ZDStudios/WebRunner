@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{% block title %}WebRunner{% endblock %}</title>
+  {# ?v= busts the browser cache when WebRunner is upgraded #}
+  <link rel="stylesheet" href="/static/style.css?v={{ version }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%235b8def'/><path d='M11 9l7 7-7 7' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  {% block head %}{% endblock %}
+</head>
+<body>
+{% import "icons.html" as ic with context %}
+{% include "icons.html" without context %}
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6l7 6-7 6"/></svg>
+      </div>
+      <div class="brand-text">
+        <div class="brand-name">WebRunner</div>
+        <div class="brand-version">v{{ version }}</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a href="/"         class="{% if nav == 'dashboard' %}active{% endif %}">{{ ic.icon('dashboard') }}<span>Dashboard</span></a>
+      <a href="/jobs"     class="{% if nav == 'jobs' %}active{% endif %}">{{ ic.icon('jobs') }}<span>Jobs</span><span class="nav-badge" id="nav-running" style="display:none"></span></a>
+      <a href="/runs"     class="{% if nav == 'runs' %}active{% endif %}">{{ ic.icon('runs') }}<span>History</span></a>
+      <a href="/services" class="{% if nav == 'services' %}active{% endif %}">{{ ic.icon('services') }}<span>Services</span></a>
+      <a href="/settings" class="{% if nav == 'settings' %}active{% endif %}">{{ ic.icon('settings') }}<span>Settings</span></a>
+    </nav>
+
+    <div class="sidebar-foot">
+      <button class="btn-ghost btn-icon" onclick="WRtoggleTheme()" title="Toggle light/dark">{{ ic.icon('theme', 15) }}</button>
+      <span class="truncate">{{ user or 'anonymous' }}</span>
+      {% if not auth_disabled %}
+      <button class="btn-ghost btn-icon" style="margin-left:auto" title="Sign out"
+              onclick="WR.post('/api/logout').then(()=>location.href='/login')">{{ ic.icon('logout', 15) }}</button>
+      {% endif %}
+    </div>
+  </aside>
+
+  <div class="main">
+    {% block topbar %}
+    <header class="topbar">
+      <h1>{% block heading %}{% endblock %}</h1>
+      <div class="spacer"></div>
+      {% block actions %}{% endblock %}
+    </header>
+    {% endblock %}
+    <div class="page {% block page_class %}{% endblock %}">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</div>
+
+{% if auth_disabled %}
+<div class="toasts"><div class="toast warn">
+  <div class="toast-title">Authentication is disabled</div>
+  <div>Anyone who can reach this port can run commands as this user.</div>
+</div></div>
+{% endif %}
+
+<script src="/static/app.js?v={{ version }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

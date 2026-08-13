@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · WebRunner{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+
+{% block actions %}
+  <a class="btn btn-primary" href="/jobs/new">{{ ic.icon('plus', 15) }} New job</a>
+{% endblock %}
+
+{% block content %}
+<div class="col gap-lg">
+
+  <div class="grid stats" id="stats"></div>
+
+  <div class="grid two">
+    <div class="card">
+      <div class="card-head">
+        <h2>Activity</h2>
+        <span class="tiny faint">last 24 hours</span>
+      </div>
+      <div class="card-body">
+        <div class="timeline" id="timeline"></div>
+        <div class="row tiny faint" style="justify-content:space-between;margin-top:8px">
+          <span>24h ago</span><span>now</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Coming up</h2></div>
+      <div class="card-body tight"><div id="upcoming"></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Recent runs</h2>
+      <a class="tiny" href="/runs">View all →</a>
+    </div>
+    <div class="card-body tight"><div id="recent"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Host</h2></div>
+    <div class="card-body"><div id="host" class="small muted"></div></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const statCard = (label, value, note, tone = '') => `
+  <div class="card stat">
+    <div class="stat-label">${label}</div>
+    <div class="stat-value" ${tone ? `style="color:var(--${tone})"` : ''}>${value}</div>
+    <div class="stat-note">${note}</div>
+  </div>`;
+
+async function load() {
+  let data;
+  try { data = await WR.get('/api/stats'); } catch (err) { return WR.error(err); }
+
+  const rate = data.runs_24h ? Math.round((data.success_24h / data.runs_24h) * 100) : null;
+  document.getElementById('stats').innerHTML = [
+    statCard('Jobs', data.jobs_total, `${data.jobs_enabled} enabled`),
+    statCard('Running now', data.running_now, data.running_now ? 'in progress' : 'idle',
+             data.running_now ? 'accent' : ''),
+    statCard('Runs (24h)', data.runs_24h, rate === null ? 'no runs yet' : `${rate}% succeeded`),
+    statCard('Failures (24h)', data.failed_24h, data.failed_24h ? 'needs a look' : 'all clear',
+             data.failed_24h ? 'red' : 'green'),
+  ].join('');
+
+  const peak = Math.max(1, ...data.timeline.map((b) => b.success + b.failed));
+  document.getElementById('timeline').innerHTML = data.timeline.map((bucket, i) => {
+    const total = bucket.success + bucket.failed;
+    const height = total ? Math.max(8, (total / peak) * 100) : 3;
+    const okShare = total ? (bucket.success / total) * 100 : 0;
+    const hoursAgo = 23 - i;
+    return `<div class="timeline-bar" style="height:${height}%"
+              title="${total} run(s) ${hoursAgo}h ago — ${bucket.success} ok, ${bucket.failed} failed">
+        ${bucket.success ? `<span class="ok" style="height:${okShare}%"></span>` : ''}
+        ${bucket.failed ? `<span class="bad" style="height:${100 - okShare}%"></span>` : ''}
+      </div>`;
+  }).join('');
+
+  const upcoming = document.getElementById('upcoming');
+  if (!data.upcoming.length) {
+    upcoming.innerHTML = `<div class="empty"><svg width="34" height="34"><use href="#i-clock"/></svg>
+      <h3>Nothing scheduled</h3><div class="small">Create a job to get started.</div></div>`;
+  } else {
+    upcoming.innerHTML = '<table><tbody>' + data.upcoming.map((job) => `
+      <tr>
+        <td><a href="/jobs/${job.id}/edit">${WR.escape(job.name)}</a></td>
+        <td class="right nowrap small muted">${WR.when(job.next_run)}</td>
+        <td class="right nowrap tiny faint" style="width:70px">${WR.relative(job.next_run)}</td>
+      </tr>`).join('') + '</tbody></table>';
+  }
+
+  const recent = document.getElementById('recent');
+  if (!data.recent.length) {
+    recent.innerHTML = `<div class="empty"><svg width="34" height="34"><use href="#i-empty"/></svg>
+      <h3>No runs yet</h3></div>`;
+  } else {
+    recent.innerHTML = '<table><tbody>' + data.recent.map((run) => `
+      <tr style="cursor:pointer" onclick="WR.showRun(${run.id})">
+        <td style="width:90px">${WR.pill(run.status)}</td>
+        <td class="truncate">${WR.escape(run.job_name || '(deleted job)')}</td>
+        <td class="right nowrap small muted" style="width:80px">${WR.duration(run.duration)}</td>
+        <td class="right nowrap tiny faint" style="width:80px">${WR.relative(run.started_at)}</td>
+      </tr>`).join('') + '</tbody></table>';
+  }
+
+  const host = data.host;
+  document.getElementById('host').innerHTML = `
+    <div class="row" style="flex-wrap:wrap;gap:18px">
+      <span><b>${WR.escape(host.hostname)}</b></span>
+      <span class="faint">${WR.escape(host.platform)} ${WR.escape(host.release)}</span>
+      <span class="faint">Python ${WR.escape(host.python)}</span>
+      ${host.in_docker ? '<span class="tag">docker</span>' : ''}
+      <span class="faint">up ${WR.duration(host.uptime)}</span>
+      <span class="faint">WebRunner ${WR.escape(host.version)}</span>
+    </div>`;
+
+  const badge = document.getElementById('nav-running');
+  badge.style.display = data.running_now ? '' : 'none';
+  badge.textContent = data.running_now;
+}
+
+load();
+setInterval(load, 15000);
+WR.events.on((msg) => { if (msg.event?.startsWith('run.')) load(); });
+</script>
+{% endblock %}

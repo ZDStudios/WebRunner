@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webrunner"
+version = "1.0.0"
+description = "Self-hosted job scheduler with a web dashboard: run commands, scripts and services on a schedule."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "WebRunner" }]
+keywords = ["cron", "scheduler", "jobs", "dashboard", "automation", "systemd"]
+classifiers = [
+    "Environment :: Web Environment",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "fastapi>=0.110,<1.0",
+    "uvicorn[standard]>=0.27",
+    "jinja2>=3.1",
+    # Windows has no IANA time-zone database of its own.
+    "tzdata; sys_platform == 'win32'",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourname/webrunner"
+
+[project.scripts]
+webrunner = "webrunner.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["webrunner*"]
+
+[tool.setuptools.package-data]
+webrunner = ["templates/*.html", "static/*"]

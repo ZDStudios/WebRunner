@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+{% block title %}Settings · WebRunner{% endblock %}
+{% block heading %}Settings{% endblock %}
+
+{% block content %}
+<div class="grid two" style="align-items:start;max-width:1100px">
+
+  <div class="card">
+    <div class="card-head"><h2>General</h2></div>
+    <div class="card-body">
+      <div class="field">
+        <label>Default timezone</label>
+        <input id="timezone" placeholder="System default" list="tz-list" autocomplete="off">
+        <datalist id="tz-list"></datalist>
+        <div class="field-help">Jobs without their own timezone use this one.</div>
+      </div>
+      <div class="field">
+        <label>Global environment variables</label>
+        <textarea id="global_env" class="code-input" rows="4"
+                  placeholder="PATH=/usr/local/bin:/usr/bin&#10;API_HOST=example.com"></textarea>
+        <div class="field-help">One <code>KEY=value</code> per line. Every job inherits these.</div>
+      </div>
+      <div class="field">
+        <label>Keep this many runs</label>
+        <input id="retention_runs" type="number" min="100" step="100">
+        <div class="field-help">Older history is pruned hourly.</div>
+      </div>
+      <button class="btn-primary" id="save-general">Save</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Notifications</h2></div>
+    <div class="card-body">
+      <div class="field">
+        <label>Webhook URL</label>
+        <input id="notify_url" placeholder="https://hooks.example.com/…" autocomplete="off">
+        <div class="field-help">Receives a JSON POST when a run finishes.</div>
+      </div>
+      <div class="field">
+        <label>Send webhooks</label>
+        <select id="notify_on">
+          <option value="failure">Only on failure</option>
+          <option value="always">On every run</option>
+          <option value="never">Never</option>
+        </select>
+      </div>
+
+      <div class="stat-label" style="margin:18px 0 10px">E-mail (SMTP)</div>
+      <div class="field-row">
+        <div class="field"><label>Host</label><input id="smtp_host" autocomplete="off"></div>
+        <div class="field" style="max-width:110px"><label>Port</label><input id="smtp_port" type="number"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Username</label><input id="smtp_user" autocomplete="off"></div>
+        <div class="field"><label>Password</label><input id="smtp_password" type="password"
+             placeholder="unchanged" autocomplete="new-password"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>From</label><input id="smtp_from" autocomplete="off"></div>
+        <div class="field"><label>To</label><input id="smtp_to" placeholder="a@x.com, b@y.com" autocomplete="off"></div>
+      </div>
+      <label class="checkbox-row mb"><input type="checkbox" id="smtp_tls"> Use STARTTLS</label>
+      <button class="btn-primary" id="save-notify">Save</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Secrets</h2>
+      <button class="btn-sm" id="add-secret">{{ ic.icon('plus', 13) }} Add</button>
+    </div>
+    <div class="card-body">
+      <p class="small muted mb">
+        Reference these from any block as <code class="mono">{{ '{{' }} secrets.NAME {{ '}}' }}</code>.
+        Values are never sent back to the browser and are left out of exports.
+      </p>
+      <div id="secrets"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>API tokens</h2>
+      <button class="btn-sm" id="add-token">{{ ic.icon('plus', 13) }} Create</button>
+    </div>
+    <div class="card-body">
+      <p class="small muted mb">
+        Use with <code class="mono">Authorization: Bearer &lt;token&gt;</code>. Tokens have the
+        same power as your login, so treat them as root credentials.
+      </p>
+      <div id="tokens"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Change password</h2></div>
+    <div class="card-body">
+      <div class="field"><label>Current password</label>
+        <input id="current-password" type="password" autocomplete="current-password"></div>
+      <div class="field"><label>New password</label>
+        <input id="new-password" type="password" autocomplete="new-password"></div>
+      <div class="field"><label>Repeat new password</label>
+        <input id="repeat-password" type="password" autocomplete="new-password"></div>
+      <button class="btn-primary" id="save-password">Update password</button>
+      <div class="field-help">Other sessions are signed out when the password changes.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>System</h2></div>
+    <div class="card-body">
+      <div id="runtime" class="small"></div>
+      <div class="row mt" style="gap:8px">
+        <button class="btn-sm" id="import-jobs">Import jobs…</button>
+        <a class="btn btn-sm" href="/api/export" download="webrunner-jobs.json">Export jobs</a>
+        <a class="btn btn-sm" href="/api/docs" target="_blank" rel="noopener">API docs</a>
+      </div>
+      <input type="file" id="import-file" accept="application/json" style="display:none">
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let data = null;
+
+async function load() {
+  try { data = await WR.get('/api/settings'); } catch (err) { return WR.error(err); }
+  const s = data.settings;
+
+  for (const key of ['timezone', 'global_env', 'retention_runs', 'notify_url', 'notify_on',
+                     'smtp_host', 'smtp_port', 'smtp_user', 'smtp_from', 'smtp_to']) {
+    const el = document.getElementById(key);
+    if (el) el.value = s[key] ?? '';
+  }
+  document.getElementById('smtp_tls').checked = ['1', 'true', 'yes', 'on'].includes(s.smtp_tls);
+  document.getElementById('smtp_password').placeholder = s.smtp_password_set ? '•••••• (unchanged)' : '';
+
+  try {
+    const zones = Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : [];
+    document.getElementById('tz-list').innerHTML = zones.map((z) => `<option value="${z}">`).join('');
+  } catch { /* free-text fallback */ }
+
+  renderSecrets();
+  renderTokens();
+
+  const r = data.runtime;
+  document.getElementById('runtime').innerHTML = [
+    ['Version', r.version], ['Platform', r.platform], ['Python', r.python],
+    ['Listening on', r.host], ['Data directory', r.data_dir], ['Default shell', r.shell],
+    ['Effective timezone', r.timezone],
+    ['Service backends', r.backends.join(', ') || 'none detected'],
+    ['Authentication', r.auth_disabled ? '⚠ DISABLED' : 'enabled'],
+  ].map(([label, value]) =>
+    `<div class="row" style="justify-content:space-between;padding:5px 0;
+       border-bottom:1px solid var(--border)">
+      <span class="faint">${label}</span><span class="mono tiny">${WR.escape(value)}</span></div>`
+  ).join('');
+}
+
+function renderSecrets() {
+  const host = document.getElementById('secrets');
+  if (!data.secrets.length) {
+    host.innerHTML = '<div class="small faint">No secrets stored.</div>';
+    return;
+  }
+  host.innerHTML = data.secrets.map((secret) => `
+    <div class="row" style="justify-content:space-between;padding:7px 0;
+         border-bottom:1px solid var(--border)">
+      <span class="mono small">${WR.escape(secret.name)}</span>
+      <span class="row">
+        <span class="tiny faint">${WR.relative(secret.updated_at)}</span>
+        <button class="btn-ghost btn-icon" style="color:var(--red)"
+                onclick="removeSecret('${WR.escape(secret.name)}')">
+          <svg width="13" height="13"><use href="#i-trash"/></svg></button>
+      </span>
+    </div>`).join('');
+}
+
+function renderTokens() {
+  const host = document.getElementById('tokens');
+  if (!data.tokens.length) {
+    host.innerHTML = '<div class="small faint">No tokens yet.</div>';
+    return;
+  }
+  host.innerHTML = data.tokens.map((token) => `
+    <div class="row" style="justify-content:space-between;padding:7px 0;
+         border-bottom:1px solid var(--border)">
+      <span><b class="small">${WR.escape(token.name)}</b>
+        <code class="tiny faint">${WR.escape(token.prefix)}…</code></span>
+      <span class="row">
+        <span class="tiny faint">${token.last_used ? 'used ' + WR.relative(token.last_used) : 'never used'}</span>
+        <button class="btn-ghost btn-icon" style="color:var(--red)" onclick="removeToken(${token.id})">
+          <svg width="13" height="13"><use href="#i-trash"/></svg></button>
+      </span>
+    </div>`).join('');
+}
+
+async function saveSettings(keys, button) {
+  const payload = {};
+  for (const key of keys) {
+    const el = document.getElementById(key);
+    if (!el) continue;
+    payload[key] = el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
+  }
+  button.disabled = true;
+  try { await WR.put('/api/settings', payload); WR.toast('Settings saved', 'success'); await load(); }
+  catch (err) { WR.error(err); }
+  finally { button.disabled = false; }
+}
+
+document.getElementById('save-general').onclick = (e) =>
+  saveSettings(['timezone', 'global_env', 'retention_runs'], e.target);
+document.getElementById('save-notify').onclick = (e) =>
+  saveSettings(['notify_url', 'notify_on', 'smtp_host', 'smtp_port', 'smtp_user',
+                'smtp_password', 'smtp_from', 'smtp_to', 'smtp_tls'], e.target);
+
+document.getElementById('add-secret').onclick = () => {
+  const name = WR.el('input', { placeholder: 'API_KEY', autocomplete: 'off' });
+  const value = WR.el('input', { placeholder: 'value', type: 'password', autocomplete: 'new-password' });
+  WR.modal({
+    title: 'Add a secret',
+    size: 'narrow',
+    body: WR.el('div', {},
+      WR.el('div', { class: 'field' }, WR.el('label', {}, 'Name'), name),
+      WR.el('div', { class: 'field' }, WR.el('label', {}, 'Value'), value),
+      WR.el('div', { class: 'field-help' }, 'Letters, digits and underscores only.')),
+    actions: [
+      { label: 'Cancel', onClick: (close) => close() },
+      { label: 'Save', class: 'btn-primary', onClick: async (close) => {
+        try {
+          await WR.post('/api/secrets', { name: name.value.trim(), value: value.value });
+          close(); WR.toast('Secret saved', 'success'); load();
+        } catch (err) { WR.error(err); }
+      } },
+    ],
+  });
+};
+
+async function removeSecret(name) {
+  if (!await WR.confirm(`Delete the secret “${name}”? Jobs referencing it will render it empty.`,
+                        { confirmLabel: 'Delete' })) return;
+  try { await WR.del(`/api/secrets/${encodeURIComponent(name)}`); load(); } catch (err) { WR.error(err); }
+}
+
+document.getElementById('add-token').onclick = () => {
+  const name = WR.el('input', { placeholder: 'ci-pipeline', autocomplete: 'off' });
+  WR.modal({
+    title: 'Create an API token',
+    size: 'narrow',
+    body: WR.el('div', { class: 'field' }, WR.el('label', {}, 'Label'), name),
+    actions: [
+      { label: 'Cancel', onClick: (close) => close() },
+      { label: 'Create', class: 'btn-primary', onClick: async (close) => {
+        try {
+          const result = await WR.post('/api/tokens', { name: name.value.trim() });
+          close();
+          WR.modal({
+            title: 'Copy this token now',
+            size: 'narrow',
+            body: WR.el('div', {},
+              WR.el('p', { class: 'small muted' }, 'It will not be shown again.'),
+              WR.el('pre', { class: 'terminal', style: { minHeight: 'auto' } }, result.token)),
+            actions: [{ label: 'Done', class: 'btn-primary', onClick: (c) => { c(); load(); } }],
+          });
+        } catch (err) { WR.error(err); }
+      } },
+    ],
+  });
+};
+
+async function removeToken(id) {
+  if (!await WR.confirm('Revoke this token? Anything using it stops working immediately.',
+                        { confirmLabel: 'Revoke' })) return;
+  try { await WR.del(`/api/tokens/${id}`); load(); } catch (err) { WR.error(err); }
+}
+
+document.getElementById('save-password').onclick = async (event) => {
+  const current = document.getElementById('current-password').value;
+  const next = document.getElementById('new-password').value;
+  const repeat = document.getElementById('repeat-password').value;
+  if (next !== repeat) return WR.toast('The new passwords do not match', 'error');
+  if (next.length < 8) return WR.toast('Use at least 8 characters', 'error');
+  event.target.disabled = true;
+  try {
+    const result = await WR.post('/api/password', { current_password: current, new_password: next });
+    WR.toast('Password updated', 'success');
+    if (result.warning) WR.toast(result.warning, 'warn');
+    for (const id of ['current-password', 'new-password', 'repeat-password']) {
+      document.getElementById(id).value = '';
+    }
+  } catch (err) { WR.error(err); }
+  finally { event.target.disabled = false; }
+};
+
+document.getElementById('import-jobs').onclick = () => document.getElementById('import-file').click();
+document.getElementById('import-file').onchange = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const payload = JSON.parse(await file.text());
+    const result = await WR.post('/api/import', payload);
+    WR.toast(`Imported ${result.created}, skipped ${result.skipped}`, 'success');
+    for (const message of result.errors) WR.toast(message, 'error');
+  } catch (err) { WR.error(err); }
+  finally { event.target.value = ''; }
+};
+
+load();
+</script>
+{% endblock %}

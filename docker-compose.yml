@@ -1,0 +1,53 @@
+# WebRunner — docker compose deployment.
+#
+#   docker compose up -d
+#
+# `restart: unless-stopped` is what makes it come back automatically after a
+# reboot, provided the Docker daemon itself starts at boot (it does by default
+# on Linux: `systemctl enable docker`).
+
+services:
+  webrunner:
+    build: .
+    image: webrunner:latest
+    container_name: webrunner
+    restart: unless-stopped
+    ports:
+      # Bind to localhost only and put a reverse proxy in front for anything
+      # reachable from outside the machine. Change to "8770:8770" to expose it
+      # on the LAN — but read the security notes in the README first.
+      - "127.0.0.1:8770:8770"
+    environment:
+      TZ: ${TZ:-UTC}
+      WEBRUNNER_TZ: ${TZ:-UTC}
+      # Set these on first run to choose your own login instead of a generated one.
+      WEBRUNNER_ADMIN_USER: ${WEBRUNNER_ADMIN_USER:-admin}
+      WEBRUNNER_ADMIN_PASSWORD: ${WEBRUNNER_ADMIN_PASSWORD:-}
+      # Keeps sessions valid across container restarts.
+      WEBRUNNER_SECRET: ${WEBRUNNER_SECRET:-}
+    volumes:
+      - webrunner-data:/data
+
+      # Let jobs manage host containers and use the Docker block / Services page.
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      # Mount whatever your jobs need to reach. Examples:
+      # - /srv/scripts:/srv/scripts:ro
+      # - /srv/backups:/srv/backups
+      # - ~/.ssh:/root/.ssh:ro
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8770/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  webrunner-data:

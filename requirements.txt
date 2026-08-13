@@ -1,0 +1,7 @@
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27
+jinja2>=3.1
+
+# Windows ships no IANA time-zone database, so zoneinfo needs this to
+# resolve names like "Europe/London". Harmless everywhere else.
+tzdata; sys_platform == "win32"
