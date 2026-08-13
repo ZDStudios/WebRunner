@@ -246,8 +246,12 @@ td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align:
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: var(--bg-inset); }
 td.actions { text-align: right; white-space: nowrap; }
-td.actions button { visibility: hidden; }
-tr:hover td.actions button, td.actions button.always { visibility: visible; }
+/* Row actions stay dim until the row is hovered — visible enough to be
+   discoverable, quiet enough not to clutter a long table. Links need the
+   same treatment as buttons or the set looks half-rendered. */
+td.actions button, td.actions .btn { opacity: 0.4; transition: opacity 0.12s; }
+tr:hover td.actions button, tr:hover td.actions .btn,
+td.actions .always { opacity: 1; }
 
 .pill {
   display: inline-flex; align-items: center; gap: 5px;
@@ -386,7 +390,13 @@ tr:hover td.actions button, td.actions button.always { visibility: visible; }
 
 /* ------------------------------------------------------------ timeline  */
 
+/* Lets a card's body stretch so its chart fills the height a neighbouring
+   card sets, instead of leaving a block of dead space underneath. */
+.card.fill { display: flex; flex-direction: column; }
+.card.fill .card-body { flex: 1; display: flex; flex-direction: column; }
+
 .timeline { display: flex; align-items: flex-end; gap: 3px; height: 62px; }
+.timeline.grow { flex: 1; height: auto; min-height: 62px; }
 .timeline-bar {
   flex: 1; display: flex; flex-direction: column-reverse; gap: 1px;
   min-height: 3px; border-radius: 2px; overflow: hidden;

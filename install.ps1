@@ -202,11 +202,35 @@ Write-Host "  uninstall   .\install.ps1 -Uninstall"
 Write-Host ""
 
 $passwordFile = Join-Path $DataDir "initial-password.txt"
+
+# The file only appears on a genuinely first run: WebRunner generates a
+# password when the user table is empty. Give it a moment in case the service
+# is still starting, then say plainly what to do if it never shows up.
+foreach ($attempt in 1..10) {
+    if (Test-Path $passwordFile) { break }
+    Start-Sleep -Milliseconds 500
+}
+
 if (Test-Path $passwordFile) {
     Write-Host "First-run login" -ForegroundColor White
     Get-Content $passwordFile | ForEach-Object { Write-Host "    $_" }
     Write-Host ""
     Write-Host "  Change it in Settings, then delete $passwordFile"
+    Write-Host ""
+} else {
+    $webrunnerExe = Join-Path $InstallDir "Scripts\webrunner.exe"
+    Write-Host "No first-run password file at" -ForegroundColor White
+    Write-Host "    $passwordFile"
+    Write-Host ""
+    Write-Host "  That is expected when an account already exists in this data"
+    Write-Host "  directory, or when WEBRUNNER_ADMIN_PASSWORD was set. Passwords are"
+    Write-Host "  stored hashed, so an existing one cannot be recovered - set a new"
+    Write-Host "  one instead:"
+    Write-Host ""
+    Write-Host "      & '$webrunnerExe' passwd admin" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  (run it in the same account the service uses; for a SYSTEM task"
+    Write-Host "   an elevated prompt is enough, the database is the same file)"
     Write-Host ""
 }
 

@@ -180,11 +180,27 @@ echo "  restart     systemctl restart ${SERVICE_NAME}"
 echo "  data        ${DATA_DIR}"
 echo
 
+# The password file only appears on a genuinely first run — WebRunner
+# generates one when the user table is empty.
+for _ in 1 2 3 4 5 6; do
+  [[ -f "$DATA_DIR/initial-password.txt" ]] && break
+  sleep 0.5
+done
+
 if [[ -f "$DATA_DIR/initial-password.txt" ]]; then
   bold "First-run login"
   sed 's/^/    /' "$DATA_DIR/initial-password.txt"
   echo
   echo "  Change it in Settings, then delete $DATA_DIR/initial-password.txt"
+  echo
+else
+  bold "No first-run password file at $DATA_DIR/initial-password.txt"
+  echo
+  echo "  Expected when an account already exists here, or when"
+  echo "  WEBRUNNER_ADMIN_PASSWORD was set. Passwords are stored hashed and"
+  echo "  cannot be recovered — set a new one instead:"
+  echo
+  echo "      sudo -u ${RUN_USER} ${PREFIX}/venv/bin/webrunner passwd admin"
   echo
 fi
 

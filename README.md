@@ -7,17 +7,10 @@ visually, by dragging blocks onto a canvas and wiring them together.
 Runs on Linux (primary target), Windows, and in Docker. Starts automatically on
 boot. One SQLite file holds everything.
 
-```
-┌──────────────┐      success      ┌──────────────┐      true      ┌──────────────┐
-│ HTTP Request │ ────────────────► │  Condition   │ ─────────────► │   Restart    │
-│  POST /sync  │                   │ status == 200│                │    nginx     │
-└──────┬───────┘                   └──────┬───────┘                └──────────────┘
-       │ failure                          │ false
-       ▼                                  ▼
-┌──────────────┐                   ┌──────────────┐
-│    Notify    │                   │  Shell: log  │
-└──────────────┘                   └──────────────┘
-```
+![The workflow editor](docs/images/job-editor.png)
+
+*A backup job: three steps down the happy path in green, and both failure
+outputs routed to a pager in red. Click a block to configure it on the right.*
 
 ---
 
@@ -58,6 +51,40 @@ boot. One SQLite file holds everything.
 
 No message broker, no external database, no build step for the front-end.
 Three Python dependencies.
+
+### The dashboard
+
+![Dashboard](docs/images/dashboard.png)
+
+Twenty-four hours of activity, what is due next, and what just ran.
+
+### Jobs
+
+![Jobs list](docs/images/jobs-list.png)
+
+Cron expressions are translated into plain English, so `30 2 * * MON-FRI` reads
+as *at 02:30 on Mon, Tue, Wed, Thu, Fri* before you commit to it.
+
+### Live output
+
+![Run output](docs/images/run-output.png)
+
+Output streams into the browser as the job produces it, block by block, with
+colour preserved. Cancel from here and the entire process tree is killed.
+
+### Schedule preview
+
+![Schedule preview](docs/images/editor-schedule.png)
+
+The next six fire times update as you type, so a wrong cron expression is
+obvious before you save rather than at 3am.
+
+### History
+
+![Run history](docs/images/run-history.png)
+
+Every run is kept with its output, exit code, duration and per-block results.
+Filter by job or status.
 
 ---
 
@@ -444,9 +471,38 @@ What you should do:
 
 ## Troubleshooting
 
-**I forgot the password.**
-`sudo -u webrunner /opt/webrunner/venv/bin/webrunner passwd admin`
-(or `webrunner passwd` on other installs). It signs out existing sessions.
+**What is the login?** The username is `admin`. There is no fixed default
+password — WebRunner generates one the first time it starts with an empty
+database, prints it to the log, and writes it to `initial-password.txt` in the
+data directory:
+
+| Install | Where |
+|---|---|
+| Docker | `docker compose logs webrunner \| head -20` |
+| Linux | `/var/lib/webrunner/initial-password.txt` |
+| Windows | `C:\ProgramData\WebRunner\initial-password.txt` |
+
+Set your own instead by exporting `WEBRUNNER_ADMIN_USER` and
+`WEBRUNNER_ADMIN_PASSWORD` **before the first start**.
+
+**There is no `initial-password.txt`.** It is only written on a genuinely first
+run. If an account already exists in that data directory — because WebRunner
+was started once before, or the installer was run twice — the file is never
+created, and setting `WEBRUNNER_ADMIN_PASSWORD` afterwards has no effect
+either. Passwords are stored hashed, so an existing one cannot be read back.
+Set a new one:
+
+```bash
+sudo -u webrunner /opt/webrunner/venv/bin/webrunner passwd admin
+```
+
+```powershell
+& 'C:\ProgramData\WebRunner\app\Scripts\webrunner.exe' passwd admin
+```
+
+It prompts for the new password and signs out existing sessions. To start over
+completely, stop the service and delete `webrunner.db` from the data directory —
+that also deletes your jobs and history.
 
 **A job does not fire.** Check it is enabled and that `next_run` is in the
 future on the Jobs page. Verify the cron expression with the Schedule tab's
