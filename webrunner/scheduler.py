@@ -236,7 +236,7 @@ class Scheduler:
 
         if overdue > MISFIRE_GRACE_SECONDS and not job.get("catch_up"):
             log.warning(
-                "job %r missed its %s slot by %.0fs — skipping (enable catch-up to run it late)",
+                "job %r missed its %s slot by %.0fs - skipping (enable catch-up to run it late)",
                 job["name"], datetime.fromtimestamp(scheduled_for).isoformat(" ", "seconds"), overdue,
             )
             publish_event("job.missed", job_id=job["id"], job_name=job["name"],
@@ -260,7 +260,7 @@ class Scheduler:
                 error=f"skipped: already running (run #{running[0].run_id})",
             )
             publish_event("run.skipped", job_id=job_id, job_name=job["name"], run_id=run_id)
-            log.info("job %r already running — skipped", job["name"])
+            log.info("job %r already running - skipped", job["name"])
             return run_id
 
         if running and policy == "replace":

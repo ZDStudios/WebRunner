@@ -160,11 +160,18 @@ def ensure_admin(db: Database, config: Config) -> None:
         (username, security.hash_password(password), time.time()),
     )
     if generated:
+        # ASCII only: this banner is the single most important thing WebRunner
+        # ever prints, and it has to survive journald, Windows Task Scheduler
+        # logs and legacy code pages intact. Box-drawing characters either
+        # arrive as ═ escapes or raise UnicodeEncodeError outright.
+        rule = "=" * 66
         banner = (
-            "\n" + "═" * 66 +
-            f"\n  WebRunner first-run login\n\n    username: {username}\n    password: {password}\n\n"
-            "  This password is shown once. Change it in Settings after logging in.\n"
-            + "═" * 66 + "\n"
+            f"\n{rule}\n"
+            f"  WebRunner first-run login\n\n"
+            f"    username: {username}\n"
+            f"    password: {password}\n\n"
+            f"  This password is shown once. Change it in Settings after logging in.\n"
+            f"{rule}\n"
         )
         print(banner, file=sys.stderr, flush=True)
         try:

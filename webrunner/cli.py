@@ -67,7 +67,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         config.port = args.port
     if args.data_dir:
         config.data_dir = Path(args.data_dir)
-        config.data_dir.mkdir(parents=True, exist_ok=True)
+    config.ensure_data_dir()
     set_config(config)
 
     logging.basicConfig(
@@ -217,7 +217,7 @@ def cmd_passwd(args: argparse.Namespace) -> int:
     if not username:
         row = db.query_one("SELECT username FROM users ORDER BY id LIMIT 1")
         if not row:
-            print("no users exist yet — start the server once to create the first account",
+            print("no users exist yet - start the server once to create the first account",
                   file=sys.stderr)
             return 1
         username = row["username"]
@@ -253,7 +253,12 @@ def cmd_list(args: argparse.Namespace) -> int:
     from .db import Database
     from .scheduler import describe_schedule
 
-    db = Database(get_config().db_path)
+    config = get_config()
+    if not config.db_path.exists():
+        print(f"no database at {config.db_path} - run `webrunner serve` first", file=sys.stderr)
+        return 1
+
+    db = Database(config.db_path)
     jobs = db.list_jobs()
     if not jobs:
         print("no jobs yet")
@@ -269,7 +274,7 @@ def cmd_list(args: argparse.Namespace) -> int:
             f"{job['name'].ljust(width)}  "
             f"{'enabled' if job['enabled'] else 'disabled':8} "
             f"{describe_schedule(job)[:22]:22} "
-            f"{(job['last_status'] or '—')[:10]:10} {next_run}"
+            f"{(job['last_status'] or '-')[:10]:10} {next_run}"
         )
     return 0
 
@@ -360,7 +365,28 @@ def cmd_version(args: argparse.Namespace) -> int:
     print(f"python    {sys.version.split()[0]} ({sys.executable})")
     print(f"platform  {sys.platform}")
     print(f"data dir  {config.data_dir}")
-    print(f"database  {config.db_path} ({'exists' if config.db_path.exists() else 'not created yet'})")
+
+    if not config.db_path.exists():
+        print(f"database  {config.db_path} (not created yet)")
+        print()
+        print("No database here yet, so no account exists. Start it once:")
+        print("  webrunner serve")
+        print("and the first-run password is printed and written to")
+        print(f"  {config.data_dir / 'initial-password.txt'}")
+        return 0
+
+    from .db import Database
+
+    db = Database(config.db_path)
+    users = db.query("SELECT username, last_login FROM users ORDER BY id")
+    jobs = int(db.scalar("SELECT COUNT(*) FROM jobs") or 0)
+    print(f"database  {config.db_path} ({config.db_path.stat().st_size // 1024} KB)")
+    print(f"jobs      {jobs}")
+    print(f"accounts  {', '.join(u['username'] for u in users) if users else '(none)'}")
+    if users:
+        print()
+        print("Forgotten the password? It is stored hashed and cannot be read back:")
+        print(f"  webrunner passwd {users[0]['username']}")
     return 0
 
 
@@ -421,7 +447,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _make_output_encoding_safe() -> None:
+    """Never let an unprintable character kill the process.
+
+    A Windows console on a legacy code page raises UnicodeEncodeError for
+    characters it cannot map, which would otherwise take down `webrunner exec`
+    the moment a job printed a box-drawing character.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")  # type: ignore[union-attr]
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _make_output_encoding_safe()
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):

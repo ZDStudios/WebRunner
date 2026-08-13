@@ -72,8 +72,16 @@ class Config:
     log_level: str = field(default_factory=lambda: os.environ.get("WEBRUNNER_LOG_LEVEL", "info"))
 
     def __post_init__(self) -> None:
+        # Deliberately does NOT create the directory. Constructing a Config
+        # happens for read-only commands too (`webrunner version`), and
+        # leaving an empty directory behind makes it look like a half-finished
+        # install when someone goes looking for their password file.
         self.data_dir = Path(self.data_dir)
+
+    def ensure_data_dir(self) -> Path:
+        """Create the data directory. Call this before writing into it."""
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        return self.data_dir
 
     @property
     def db_path(self) -> Path:
@@ -85,6 +93,7 @@ class Config:
         env = os.environ.get("WEBRUNNER_SECRET")
         if env:
             return env
+        self.ensure_data_dir()
         key_file = self.data_dir / "secret.key"
         if key_file.exists():
             value = key_file.read_text(encoding="utf-8").strip()

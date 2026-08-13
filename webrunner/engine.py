@@ -233,7 +233,7 @@ class WorkflowEngine:
                 if visited > MAX_STEPS:
                     outcome.status = "error"
                     outcome.error = (
-                        f"stopped after {MAX_STEPS} blocks — the workflow is probably looping"
+                        f"stopped after {MAX_STEPS} blocks - the workflow is probably looping"
                     )
                     outcome.exit_code = -1
                     break
